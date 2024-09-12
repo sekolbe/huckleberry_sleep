@@ -1,7 +1,7 @@
 ---
 title: "Sleep Patterns in Huckleberry Records"
 format: 
-  html:
+  pdf:
     fig-width: 8
     fig-asp: .618
 ---
@@ -19,7 +19,7 @@ options(scipen = 999)
 
 ## Rationale
 
-As the parents of a three year old, we want to optimize our child's sleep. We have anecdotally noticed that earlier bedtimes seem to be related to better overall night sleep, and would like to test that idea with sleep data tracked in the Huckleberry app.
+As the parents of a three year old, we want to optimize our child's sleep. We have anecdotally observed that earlier bedtimes seem to be related to better overall night sleep and would like to test that idea with sleep data tracked in the Huckleberry app.
 
 ## The Data
 
@@ -47,7 +47,7 @@ huckle_clean <- huckle |>
     )
 ```
 
-We've been tracking sleep data in the Huckeberry app since the child's birth. Because children's sleep needs and nap patterns change over time, we'll only consider data from 2024. We have `r nrow(huckle_clean)` sleep records from 2024, including nap and nighttime sleep. Each record represents an instance of sleep with a start datetime, an end datetime, and a duration:
+We've been tracking sleep data in the Huckeberry app since the child's birth in 2021. Because a child's sleep needs and nap patterns change over time, we'll only consider data from 2024. We have `r nrow(huckle_clean)` sleep records from 2024, including both nap and nighttime sleep. Each record represents an instance of sleep with a start datetime, an end datetime, and a duration:
 
 ```{r}
 #| label: Show data
@@ -112,7 +112,7 @@ ggplot(huckle_nights, aes(x = nap_text, y = duration, color = factor(nap_text)))
     color = "Nap?")
 ```
 
-This visualization shows that when the child naps, they need less sleep overnight, and when they don't nap they need more sleep overnight. We can also see that sleep start time is much later on nap days:
+This visualization shows that when the child naps, they need less sleep overnight, and when they don't nap they need more sleep overnight. We can also see that sleep start time is much later (i.e., larger sleep start time values) on nap days:
 
 ```{r}
 #| label: Sleep-start-by-nap
@@ -132,7 +132,7 @@ The presence or absence of a nap clearly has a big influence on sleep start time
 
 ## The Patterns
 
-By plotting sleep duration against sleep start time, we can see the negative relationship between the two for both nap days and no-nap days. This means that when sleep start time is larger (i.e., later in the day), sleep duration is shorter.
+By plotting sleep duration against sleep start time, we can see what appears to be a negative relationship between the two for both nap days and no-nap days. This suggests that when sleep start time is larger (i.e., later in the day), sleep duration is shorter, regardless of whether or not a nap occurred that day.
 
 ```{r}
 #| label: Sleep-duration-by-starttime
@@ -164,17 +164,10 @@ huckle_decimal <- huckle_nights |>
 fit <- lm(duration_decimal ~  starttime + nap_day, data = huckle_decimal)
 ```
 
-We can also observe this negative relationship if we run a simple linear regression, which shows a significant negative coefficient on `starttime`. However, the fit of the regression is very weak, with an R^2^ value of only `r round(summary(fit)$r.squared, 3)`.
-
-```{r}
-#| label: Show-regression-output
-#| echo: false
-
-summary(fit)
-```
+We can also observe this negative relationship if we run a simple linear regression, which shows a significant negative coefficient on `starttime` (coefficient = `r round(summary(fit)$coefficients[2,1], 4)`, p-value = `r round(summary(fit)$coefficients[2,4], 3)`). However, the fit of the regression is very weak, with an R^2^ value of only `r round(summary(fit)$r.squared, 3)`.
 
 We could tweak this model to make it perform a little better, but it doesn't seem especially promising.
 
 ## Conclusion
 
-As observed anecdotally, there is a weak relationship between sleep start time and duration, regardless of whether the child napped during the day. However, the relationship is weak enough that it doesn't justify adjusting bedtime routings.
+As observed anecdotally, there is a weak relationship between sleep start time and duration, regardless of whether the child napped during the day. However, the relationship is weak enough that it doesn't justify adjusting bedtime routines.
