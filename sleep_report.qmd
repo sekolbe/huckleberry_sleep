@@ -1,0 +1,180 @@
+---
+title: "Sleep Patterns in Huckleberry Records"
+format: 
+  html:
+    fig-width: 8
+    fig-asp: .618
+---
+
+```{r}
+#| label: Setup
+#| include: false
+
+library(tidyverse)
+library(janitor)
+library(hms)
+
+options(scipen = 999)
+```
+
+## Rationale
+
+As the parents of a three year old, we want to optimize our child's sleep. We have anecdotally noticed that earlier bedtimes seem to be related to better overall night sleep, and would like to test that idea with sleep data tracked in the Huckleberry app.
+
+## The Data
+
+```{r}
+#| label: Data-prep
+#| include: false
+
+# Load data ----------
+huckle <- read_csv("raw_data/data_export_20240904.csv", na = c("yellow", "")) 
+
+# Prep data ----------
+huckle_clean <- huckle |>
+  clean_names() |>
+  filter(type == "Sleep") |>
+  # limit columns |>
+  select(type, start, end, duration) |>
+  # limit to 2024 data
+  filter(year(start) == 2024) |>
+  mutate(
+    starttime = hms::as_hms(start),
+    date = as_date(start),
+    # Add nap indicator. Sleeps that start between 8am and 4pm are naps.
+    nap_ind = ifelse(starttime < hms(hours = 8) | starttime > hms(hours = 16), 0, 1),
+    nap_ind_label = ifelse(nap_ind == 1, "Nap", "Night")
+    )
+```
+
+We've been tracking sleep data in the Huckeberry app since the child's birth. Because children's sleep needs and nap patterns change over time, we'll only consider data from 2024. We have `r nrow(huckle_clean)` sleep records from 2024, including nap and nighttime sleep. Each record represents an instance of sleep with a start datetime, an end datetime, and a duration:
+
+```{r}
+#| label: Show data
+#| echo: false
+
+example <- huckle_clean |>
+  select(type, start, end, duration) |>
+  head()
+
+knitr::kable(example)
+```
+
+### Identifying nap and nighttime sleep
+
+For this analysis, we are primarily interested in the duration of nighttime sleep, so we want to focus on nighttime sleep records. We can differentiate between nap and nighttime sleep based on the start time of the sleep record. We defined naps as sleep that starts between 8am and 4pm. We also expect them to be shorter than most nighttime sleep records, but did not include this as part of the formal definition.
+
+We can do a gut check of that classification to make sure it seems reasonable by looking at a basic scatter plot of sleep start time against sleep duration, with color mapped to the sleep type.
+
+```{r}
+#| label: Nap-plot
+#| echo: false
+
+# Check nap logic
+ggplot(huckle_clean, aes(x = starttime, y = duration, color = factor(nap_ind_label))) +
+  geom_point() + 
+  scale_colour_discrete() +
+  labs(
+    title = "Checking nap/nighttime sleep definitions",
+    x = "Sleep start time",
+    y = "Sleep duration (minutes)",
+    color = "Sleep type")
+```
+
+Sleep records coded as 'naps' cluster nicely together and generally have short durations relative to records defined as nighttime sleep, so our definition seems reasonable.
+
+### How do naps influence nighttime sleep?
+
+While the main purpose of our analysis is to look at how sleep start time relates to sleep duration, we also know that nighttime sleep needs vary depending on whether or not a nap occurred that day. Now that nap records are identified in our data, we can determine which days are nap days and which days are not, and compare overall overnight sleep needs based on the presence or absence of a nap.
+
+```{r}
+#| label: Sleep-duration-by-nap
+#| echo: false
+
+naps <- huckle_clean |>
+  group_by(date) |>
+  summarize(nap_day = max(nap_ind)) |>
+  mutate(nap_text = ifelse(nap_day == 1, "Nap day", "Not a nap day"))
+
+huckle_nights <- left_join(huckle_clean, naps, by = "date") |>
+  # Focus on night sleep; remove naps
+  filter(nap_ind == 0) |>
+  # Focus on normal evening bedtimes (between 6pm and 10pm)
+  filter(!starttime < hms(hours = 18) & !starttime > hms(hours = 22))
+
+ggplot(huckle_nights, aes(x = nap_text, y = duration, color = factor(nap_text))) +
+  geom_boxplot() + 
+  labs(
+    title = "Sleep duration",
+    subtitle = "Disaggregated by presence or absence of nap",
+    x = "Presence or absence of nap",
+    y = "Sleep duration (minutes)",
+    color = "Nap?")
+```
+
+This visualization shows that when the child naps, they need less sleep overnight, and when they don't nap they need more sleep overnight. We can also see that sleep start time is much later on nap days:
+
+```{r}
+#| label: Sleep-start-by-nap
+#| echo: false
+
+ggplot(huckle_nights, aes(x = nap_text, y = starttime, color = factor(nap_text))) +
+  geom_boxplot() + 
+  labs(
+    title = "Sleep start time",
+    subtitle = "Disaggregated by presence or absence of nap",
+    x = "Presence or absence of nap",
+    y = "Sleep start time",
+    color = "Nap?")
+```
+
+The presence or absence of a nap clearly has a big influence on sleep start time and duration. Given this, and given that we still want to test the hypothesis that within a particular type of day (nap, no-nap), earlier sleep times are related to longer sleep durations, it makes sense to analyze nap and no-nap days separately.
+
+## The Patterns
+
+By plotting sleep duration against sleep start time, we can see the negative relationship between the two for both nap days and no-nap days. This means that when sleep start time is larger (i.e., later in the day), sleep duration is shorter.
+
+```{r}
+#| label: Sleep-duration-by-starttime
+#| echo: false
+#| message: false
+
+ggplot(huckle_nights, aes(x = starttime, y = duration, color = nap_text)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  facet_wrap(~nap_text) +
+  labs(title = "Sleep start time and duration",
+       subtitle = "Disaggregated by presence or absence of nap",
+       x = "Sleep start time",
+       y = "Sleep duration",
+       color = "Nap?") +
+  scale_colour_discrete()
+```
+
+```{r}
+#| label: Simple-linear-regression
+#| echo: false
+#| message: false
+
+huckle_decimal <- huckle_nights |>
+  mutate(
+    duration_decimal = hour(duration) + minute(duration)/60
+    )
+
+fit <- lm(duration_decimal ~  starttime + nap_day, data = huckle_decimal)
+```
+
+We can also observe this negative relationship if we run a simple linear regression, which shows a significant negative coefficient on `starttime`. However, the fit of the regression is very weak, with an R^2^ value of only `r round(summary(fit)$r.squared, 3)`.
+
+```{r}
+#| label: Show-regression-output
+#| echo: false
+
+summary(fit)
+```
+
+We could tweak this model to make it perform a little better, but it doesn't seem especially promising.
+
+## Conclusion
+
+As observed anecdotally, there is a weak relationship between sleep start time and duration, regardless of whether the child napped during the day. However, the relationship is weak enough that it doesn't justify adjusting bedtime routings.
